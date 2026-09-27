@@ -1,0 +1,1 @@
+{"indexes":[{"collectionGroup":"tickets","queryScope":"COLLECTION","fields":[{"fieldPath":"batch","order":"ASCENDING"},{"fieldPath":"paymentStatus","order":"ASCENDING"}]}],"fieldOverrides":[]}
