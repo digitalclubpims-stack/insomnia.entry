@@ -1,45 +1,65 @@
-# INSOMNIA Entry Portal
+# INSOMNIA Entry Portal — Firebase + GitHub Pages
 
-Production-oriented GitHub Pages + Firebase architecture for a three-night single-pass fest.
+This package is the production-oriented starting point for the INSOMNIA three-night restricted-entry system.
 
-## Features
-- Google Form/Google Sheet registration bridge
-- Manual UTR verification by class representatives (batch-scoped)
-- Ticket generation only after payment verification
-- Ticket retrieval using registration ID + mobile + PIN
-- Aesthetic mobile ticket with QR
-- Firebase-backed live QR scanner
-- Two gates: BOYS / GIRLS; scanner operator selects gate
-- Four scanner devices supported concurrently
-- No re-entry: one successful entry per ticket per night
-- Night 1/2/3 state retained independently
-- College ID check is an operational gate rule
-- Admin dashboard, CR dashboard, scanner dashboard
-- CSV import/export
-- Audit logs
-- Firestore transaction-based entry claim to prevent race conditions
+## Agreed workflow
+1. Student pays a batch CR by UPI.
+2. Student submits the Google Form: email, attendee name, roll number, phone, batch, money paid to, UTR, payment screenshot.
+3. The Google Form response spreadsheet is bridged to Firebase by Apps Script.
+4. The registration is `PENDING` and has no valid ticket yet.
+5. The assigned CR signs into the CR portal and sees only their batch's pending registrations.
+6. The CR checks the UTR in their own UPI transaction history.
+7. On **Verify**, the Firebase Cloud Function atomically changes the payment to `VERIFIED`, generates the unique ticket ID and opaque QR token, and creates the ticket record.
+8. The attendee opens **Get Pass**, enters mobile + UTR, and downloads/views their unique phone ticket.
+9. At the gate, the attendee shows the QR and college ID. A signed-in scanner checks Firebase live.
+10. The operator checks the college ID and presses **Confirm Entry**. A Firestore transaction marks that night as used.
+11. The same ticket works on Nights 1–3 independently. No re-entry is supported.
 
-## Important deployment note
-GitHub Pages hosts the UI. Firebase Authentication + Firestore provide the secure backend. Do not put service-account credentials in this repository.
+## Roles
+- One `admin` account.
+- Two CR slots per batch. Current CR 1 names: 2021 Kashish Mahajan; 2022 Rhythm Gupta; 2023 Gurman Singh Bhatia; 2024 Nishant Mittal; 2025 Ishan. CR 2 is reserved. 2026 is supported and its CR names are intentionally open.
+- Four scanner accounts: two BOYS and two GIRLS. Create these from the admin portal.
 
-## Setup
-1. Create a Firebase project and enable Authentication -> Email/Password and Firestore.
-2. Create the web app and copy its config into `src/config.js` (or use the environment/config replacement documented there).
-3. Deploy Firestore rules from `firebase/firestore.rules` and indexes from `firebase/firestore.indexes.json`.
-4. Create one admin account in Firebase Auth. Assign its UID in the `admins/{uid}` document with `role: admin`.
-5. Create CR accounts in Firebase Auth and corresponding `crs/{uid}` docs with `batch` set to 2021..2026 and `role: cr`.
-6. Configure the Google Form and Apps Script in `apps-script/`.
-7. Deploy the Apps Script web app if using the bridge endpoints, and set the Sheet ID / portal URL.
-8. Deploy this folder to GitHub Pages.
+## Important security design
+- No ticket is valid before CR verification.
+- QR contains an opaque random token, not the visible ticket ID.
+- Scanner entry confirmation is performed server-side in a Firestore transaction to prevent simultaneous duplicate admission.
+- Scanner is online-only for authoritative decisions.
+- Firestore client rules deny direct writes to registrations/tickets/entry logs; privileged mutations happen in Cloud Functions.
+- Do not put Firebase service-account credentials in GitHub Pages.
 
-## Google Form fields
-Full Name, Mobile Number, Email, Batch (2021-2026), UTR Transaction ID, Amount Paid, Class Representative.
+## Firebase setup
+1. Create a Firebase project.
+2. Enable Authentication -> Email/Password.
+3. Create Firestore in production mode.
+4. Add a Web App and copy its config into `src/config.js`.
+5. Install Firebase CLI and run from the `firebase/` directory's parent project as documented below.
+6. Set the Functions secret: `firebase functions:secrets:set SYNC_SECRET`.
+7. Deploy functions, rules and indexes.
+8. In Firebase Auth, create the single admin account manually. Then create `admins/{ADMIN_UID}` with `{ role: 'admin' }` in Firestore.
+9. Sign into `/admin/` and create the CR/scanner accounts.
+10. Configure the Google Sheet Apps Script Script Properties with the Cloud Function URL and the same sync secret.
 
-## Ticket lifecycle
-PENDING -> VERIFIED -> ticket issued -> NIGHT_01/NIGHT_02/NIGHT_03 each independently UNUSED/USED.
+## Cloud Functions deployment
+From this project:
 
-## Security
-The QR contains an opaque random token. The scanner never trusts the visible ticket number. Entry is a Firestore transaction that verifies the token, payment status, current-night status and then atomically marks the ticket used. The operator must press Confirm Entry after checking the attendee's college ID.
+```bash
+cd firebase
+npm install -g firebase-tools
+firebase login
+firebase use --add
+cd functions && npm install && cd ..
+firebase functions:secrets:set SYNC_SECRET
+firebase deploy --only functions,firestore:rules,firestore:indexes
+```
 
-## Offline mode
-The scanner is deliberately ONLINE-ONLY for authoritative entry decisions. Browser/network caching may make the shell load, but entry cannot be confirmed without a live Firestore transaction. This avoids duplicate-entry inconsistencies.
+The HTTP bridge URL is:
+`https://asia-south1-YOUR_PROJECT_ID.cloudfunctions.net/syncRegistration`
+
+## GitHub Pages
+Upload the contents of this package (except the Firebase Functions folder if you prefer) to the GitHub repository. Enable GitHub Pages from the repository's `main` branch/root. Add the GitHub Pages domain to Firebase Authentication -> Settings -> Authorized domains.
+
+## Google Form / Sheet bridge
+The Apps Script is in `apps-script/Code.gs`. Bind it to the response spreadsheet, add the two Script Properties, and create an installable **From spreadsheet -> On form submit** trigger for `onFormSubmit`.
+
+Do not send tickets by email. The consumer Apps Script email quota is intentionally irrelevant because the ticket is retrieved from the portal after CR approval.
