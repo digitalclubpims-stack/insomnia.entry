@@ -1,1 +1,1 @@
-{"indexes":[{"collectionGroup":"tickets","queryScope":"COLLECTION","fields":[{"fieldPath":"batch","order":"ASCENDING"},{"fieldPath":"paymentStatus","order":"ASCENDING"}]}],"fieldOverrides":[]}
+{"indexes":[{"collectionGroup":"registrations","queryScope":"COLLECTION","fields":[{"fieldPath":"mobile","order":"ASCENDING"},{"fieldPath":"utr","order":"ASCENDING"}]},{"collectionGroup":"registrations","queryScope":"COLLECTION","fields":[{"fieldPath":"batch","order":"ASCENDING"},{"fieldPath":"paymentStatus","order":"ASCENDING"}]}],"fieldOverrides":[]}

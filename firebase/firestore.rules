@@ -1,17 +1,23 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn(){return request.auth != null;}
-    function admin(){return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));}
-    function cr(){return signedIn() && exists(/databases/$(database)/documents/crs/$(request.auth.uid));}
-    match /admins/{uid}{allow read: if admin() || (signedIn() && request.auth.uid==uid); allow write: if admin();}
-    match /crs/{uid}{allow read: if admin() || (signedIn() && request.auth.uid==uid); allow write: if admin();}
-    match /tickets/{id}{
-      allow read: if admin() || cr();
-      allow create: if admin();
-      allow update: if admin() || (cr() && request.resource.data.batch == resource.data.batch && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus','verifiedBy','verifiedAt','rejectionReason','rejectedBy','rejectedAt','ticketIssued','updatedAt']));
-      allow delete: if admin();
+    function signedIn() { return request.auth != null; }
+    function admin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function cr() { return signedIn() && exists(/databases/$(database)/documents/crs/$(request.auth.uid)); }
+    function scanner() { return signedIn() && exists(/databases/$(database)/documents/scannerOperators/$(request.auth.uid)); }
+    function crBatch() { return get(/databases/$(database)/documents/crs/$(request.auth.uid)).data.batch; }
+    match /admins/{uid} { allow read: if admin() || (signedIn() && request.auth.uid == uid); allow write: if admin(); }
+    match /crs/{uid} { allow read: if admin() || (signedIn() && request.auth.uid == uid); allow write: if admin(); }
+    match /scannerOperators/{uid} { allow read: if admin() || (signedIn() && request.auth.uid == uid); allow write: if admin(); }
+    match /registrations/{id} {
+      allow read: if admin() || (cr() && resource.data.batch == crBatch());
+      allow write: if false;
     }
-    match /auditLogs/{id}{allow read: if admin(); allow create: if admin() || cr(); allow update,delete: if false;}
+    match /tickets/{id} {
+      allow read: if admin();
+      allow write: if false;
+    }
+    match /entryLogs/{id} { allow read: if admin(); allow write: if false; }
+    match /auditLogs/{id} { allow read: if admin(); allow write: if false; }
   }
 }
