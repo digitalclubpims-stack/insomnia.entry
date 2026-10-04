@@ -1,22 +1,42 @@
-/** INSOMNIA Google Form bridge.
- * Bind this script to the response spreadsheet.
- * Expected response headers: Full Name, Mobile Number, Email, Batch, UTR Transaction ID, Amount Paid, Class Representative.
- * The script creates a ticket record in Firestore via the Firebase REST API only after an admin-controlled import/verification workflow.
- * For production, use a secure server-side function or authenticated admin import rather than embedding a Firebase service account key in Apps Script.
+/** INSOMNIA Google Form -> Firebase bridge.
+ * Bind this script to the response spreadsheet and install an onFormSubmit trigger.
+ * Put the following in Script Properties:
+ * FIREBASE_SYNC_URL = https://asia-south1-YOUR_PROJECT.cloudfunctions.net/syncRegistration
+ * SYNC_SECRET = the same secret configured in Firebase Functions
  */
-const CONFIG={PORTAL_URL:'https://YOUR-GITHUB-USERNAME.github.io/YOUR-REPO/ticket/',SHEET_NAME:'Form Responses 1'};
+const CONFIG={
+  SHEET_NAME:'Form Responses 1',
+  BATCHES:['2021','2022','2023','2024','2025','2026','OTHERS'],
+  CR_BY_BATCH:{
+    '2021':['Kashish Mahajan','CR 2'],
+    '2022':['Rhythm Gupta','CR 2'],
+    '2023':['Gurman Singh Bhatia','CR 2'],
+    '2024':['Nishant Mittal','CR 2'],
+    '2025':['Ishan','CR 2'],
+    '2026':['CR 1','CR 2'],
+    'OTHERS':['CR 1','CR 2']
+  }
+};
 function onFormSubmit(e){
-  const v=e.namedValues||{}; const row=e.range.getRow();
-  const sheet=e.range.getSheet();
-  const headers=sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0];
-  const get=(h)=>((v[h]&&v[h][0])||'').trim();
-  const name=get('Full Name'),mobile=get('Mobile Number'),email=get('Email'),batch=get('Batch'),utr=get('UTR Transaction ID'),amount=get('Amount Paid'),crName=get('Class Representative');
-  if(!name||!mobile||!batch||!utr||!crName) throw new Error('Required registration fields missing');
-  const ticketId='INS-'+Utilities.getUuid().replace(/-/g,'').slice(0,10).toUpperCase();
-  const token=Utilities.getUuid()+Utilities.getUuid();
-  const pin=Utilities.getUuid().replace(/-/g,'').slice(0,10).toUpperCase();
-  const col=(h)=>headers.indexOf(h)+1;
-  const additions={'Registration ID':ticketId,'Secure Token':token,'Retrieval PIN':pin,'Payment Status':'PENDING','Ticket Issued':'NO'};
-  Object.entries(additions).forEach(([h,val])=>{let c=col(h);if(!c){c=sheet.getLastColumn()+1;sheet.getRange(1,c).setValue(h)}sheet.getRange(row,c).setValue(val)});
-  // Do not email. Give organizers the registration ID and retrieval PIN through the approved portal workflow.
+  const p=PropertiesService.getScriptProperties();
+  const url=p.getProperty('FIREBASE_SYNC_URL'); const secret=p.getProperty('SYNC_SECRET');
+  if(!url||!secret) throw new Error('Configure FIREBASE_SYNC_URL and SYNC_SECRET in Script Properties.');
+  const v=e.namedValues||{};
+  const get=(...names)=>{for(const n of names){if(v[n]&&v[n][0])return String(v[n][0]).trim()}return ''};
+  const payload={
+    name:get('NAME OF THE ATTENDEE','Full Name','Name of Attendee'),
+    rollNumber:get('ROLL NUMBER','Roll Number'),
+    mobile:get('PHONE NUMBER','Mobile Number','Phone Number'),
+    email:get('Email','EMAIL'),
+    batch:get('BATCH','Batch'),
+    crName:get('MONEY PAID TO?','Money Paid To','Class Representative'),
+    utr:get('TYPE THE UTR NUMBER (*for verification)','UTR Transaction ID','UTR'),
+    amount:get('AMOUNT PAID','Amount Paid'),
+    paymentScreenshotUrl:get('ATTACH THE SCREENSHOT OF PAYMENT.','Payment Screenshot','Payment Screenshot URL')
+  };
+  if(!payload.name||!payload.mobile||!payload.batch||!payload.crName||!payload.utr) throw new Error('Required registration field missing.');
+  const options=CONFIG.CR_BY_BATCH[payload.batch]||[];
+  if(options.length && !options.includes(payload.crName)) throw new Error('CR selection does not match the selected batch.');
+  const res=UrlFetchApp.fetch(url,{method:'post',contentType:'application/json',headers:{'x-insomnia-sync-secret':secret},payload:JSON.stringify(payload),muteHttpExceptions:true});
+  const code=res.getResponseCode(); if(code<200||code>=300) throw new Error('Firebase sync failed: '+res.getContentText());
 }
